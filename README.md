@@ -20,7 +20,11 @@ Open `http://localhost:5000`. Data and the generated credential-encryption key a
 - Copyable, non-root Linux bootstrap commands for the current user's `authorized_keys`
 - AES-GCM encryption for stored credentials
 - Linux OS, kernel, CPU count, uptime, load, memory, and root-disk collection
+- Network interface inventory and systemd service status, including stopped and failed services
+- Fleet-wide mounted filesystem inventory with used, free, and total capacity
 - Docker container inventory, on-demand logs, Compose metadata, guarded runtime controls, and one-click Compose image updates
+- Rootless Docker discovery through login-shell environments and per-user daemon sockets
+- Public OCI/Docker registry digest fallback when remote Buildx or manifest plugins are unavailable
 - SQLite-backed daily image-version and update-status caching with forced checks on refresh
 - SQLite persistence with WAL mode and seven days of metric samples
 - Automatic polling (60 seconds by default) and manual refresh
@@ -29,7 +33,7 @@ Open `http://localhost:5000`. Data and the generated credential-encryption key a
 - Content-hashed JavaScript and stylesheet URLs generated during Docker builds
 - Health endpoint at `/api/health`
 
-The remote user needs permission to execute `docker ps` and `docker logs`. No agent is installed on the target machine.
+The remote user needs permission to execute `docker ps` and `docker logs`. Rootless installations may keep the Docker CLI in `$HOME/bin`; SeControl includes that path automatically. No agent is installed on the target machine.
 
 ## Configuration
 
@@ -55,6 +59,7 @@ go run ./cmd/secontrol
 ## API
 
 - `GET /api/overview`
+- `GET /api/storage`
 - `GET|POST /api/agents`
 - `POST /api/agents/test`
 - `GET|POST /api/ssh-keys`
@@ -64,6 +69,7 @@ go run ./cmd/secontrol
 - `POST /api/agents/{id}/refresh`
 - `GET /api/agents/{id}/containers`
 - `GET /api/agents/{id}/metrics`
+- `GET /api/agents/{id}/system`
 - `GET /api/agents/{id}/logs?container=<id>&lines=200`
 
 ## Next production steps

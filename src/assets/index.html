@@ -15,6 +15,7 @@
         <button class="nav-item active" data-page="overview"><span>⌁</span>Overview</button>
         <button class="nav-item" data-page="machines"><span>▣</span>Machines</button>
         <button class="nav-item" data-page="containers"><span>⬡</span>Containers</button>
+        <button class="nav-item" data-page="storage"><span>▤</span>Storage</button>
       </nav>
       <div class="side-bottom">
         <button class="nav-item settings-button" data-page="settings"><span>⚙</span>Settings</button>
@@ -30,12 +31,12 @@
         <div class="stats">
           <article><div class="stat-icon teal">▣</div><div><small>MACHINES</small><strong id="stat-machines">0</strong><span id="stat-online">0 online</span></div></article>
           <article><div class="stat-icon blue">⬡</div><div><small>CONTAINERS</small><strong id="stat-containers">0</strong><span id="stat-running">0 running</span></div></article>
-          <article><div class="stat-icon purple">⌁</div><div><small>AVG. LOAD</small><strong id="stat-load">—</strong><span>Across online hosts</span></div></article>
-          <article><div class="stat-icon amber">◷</div><div><small>LAST CHECK</small><strong id="stat-check">Now</strong><span>Auto-refreshes</span></div></article>
+          <article><div class="stat-icon purple">▤</div><div><small>STORAGE AVAILABLE</small><strong id="stat-storage">—</strong><span id="stat-storage-total">Across all volumes</span></div></article>
+          <article><div class="stat-icon amber">◆</div><div><small>SERVICES</small><strong id="stat-services">0</strong><span id="stat-service-health">0 failed</span></div></article>
         </div>
         <div class="grid">
           <section class="panel fleet"><div class="panel-head"><div><h2>Fleet status</h2><p>Live health of connected machines</p></div><button class="text-btn" data-page-link="machines">View all →</button></div><div id="fleet-list" class="fleet-list"></div></section>
-          <section class="panel activity"><div class="panel-head"><div><h2>System pulse</h2><p>Current resource posture</p></div></div><div id="pulse" class="pulse-empty">Connect a machine to see its pulse.</div></section>
+          <section class="panel activity"><div class="panel-head"><div><h2>Fleet capacity</h2><p>Health and resource distribution</p></div></div><div id="pulse" class="pulse-empty">Connect a machine to see fleet capacity.</div></section>
         </div>
       </section>
       <section id="machines-page" hidden>
@@ -43,6 +44,9 @@
       </section>
       <section id="containers-page" hidden>
         <div class="panel"><div class="panel-head"><div><h2>Fleet containers</h2><p>Every Docker application discovered across your machines</p></div><span class="badge online" id="container-summary">0 running</span></div><div class="container-table" id="container-table"></div></div>
+      </section>
+      <section id="storage-page" hidden>
+        <div class="panel"><div class="panel-head"><div><h2>Fleet storage</h2><p>Mounted filesystems and capacity across every machine</p></div><span class="badge neutral" id="storage-summary">0 volumes</span></div><div id="storage-list"></div></div>
       </section>
       <section id="detail-page" hidden></section>
       <section id="settings-page" hidden>
@@ -76,6 +80,41 @@
   <dialog id="container-dialog" class="container-detail-dialog">
     <div id="container-detail-content"></div>
   </dialog>
+  <dialog id="update-confirm-dialog" class="update-confirm-dialog">
+    <div class="update-confirm-head">
+      <div><p class="eyebrow">REVIEW UPDATE</p><h2 id="update-confirm-title">Update container</h2><p id="update-confirm-subtitle"></p></div>
+      <button type="button" class="icon-btn" id="close-update-confirm">×</button>
+    </div>
+    <div class="version-change">
+      <div><small>CURRENT IMAGE</small><strong id="update-from-version"></strong><code id="update-from-digest"></code></div>
+      <span class="version-arrow">→</span>
+      <div><small>AVAILABLE IMAGE</small><strong id="update-to-version"></strong><code id="update-to-digest"></code></div>
+    </div>
+    <div class="update-impact">
+      <strong>What SeControl will do</strong>
+      <p>Pull the selected Compose service image, recreate that service with its existing configuration, then refresh container inventory.</p>
+    </div>
+    <div class="dialog-actions"><button class="secondary" id="cancel-container-update">Cancel</button><button class="primary" id="confirm-container-update">Update container</button></div>
+  </dialog>
+  <dialog id="update-console-dialog" class="update-console-dialog">
+    <div class="update-console-head"><div><p class="eyebrow">CONTAINER UPDATE</p><h2 id="update-console-title">Updating container</h2></div><span class="badge pending" id="update-console-state">Running</span></div>
+    <div class="command-preview"><small>COMMAND</small><code id="update-command">Preparing command…</code></div>
+    <pre id="update-console-output" aria-live="polite">Connecting to machine…&#10;</pre>
+    <div class="dialog-actions"><button class="secondary" id="close-update-console" disabled>Close</button></div>
+  </dialog>
+  <template id="container-row-template">
+    <button class="container-fleet-row container-click">
+      <div><strong data-container-name></strong><small data-container-image-name></small></div>
+      <code data-container-version></code>
+      <span data-container-machine><strong class="machine-name"></strong><small></small></span>
+      <span class="uptime" data-container-uptime></span>
+      <span class="badge pending update-status" data-container-update>Checking…</span>
+      <span class="badge" data-container-state></span>
+    </button>
+  </template>
+  <template id="container-empty-template">
+    <div class="empty"><strong>No containers discovered</strong>Refresh this machine after Docker applications start.</div>
+  </template>
   <div id="toast" role="status"></div>
   <script src="/app.js?v=__ASSET_VERSION__" defer></script>
 </body>

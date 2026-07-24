@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/example/secontrol/internal/app"
+	"github.com/kozmixb/secontrol/internal/app"
 )
 
 func main() {

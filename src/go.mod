@@ -1,4 +1,4 @@
-module github.com/example/secontrol
+module github.com/kozmixb/secontrol
 
 go 1.24
 
