@@ -45,6 +45,7 @@ type SSHKey struct {
 	Name       string    `json:"name"`
 	PublicKey  string    `json:"publicKey"`
 	UsageCount int       `json:"usageCount"`
+	Machines   []string  `json:"machines"`
 	CreatedAt  time.Time `json:"createdAt"`
 }
 
@@ -61,29 +62,32 @@ type Container struct {
 
 type FleetContainer struct {
 	Container
-	AgentID         int64      `json:"agentId"`
-	AgentName       string     `json:"agentName"`
-	AgentHost       string     `json:"agentHost"`
-	AgentAccess     string     `json:"agentAccess"`
-	Version         string     `json:"version"`
-	UpdateAvailable *bool      `json:"updateAvailable,omitempty"`
-	ImageCheckedAt  *time.Time `json:"imageCheckedAt,omitempty"`
-	ComposeProject  string     `json:"composeProject,omitempty"`
-	ComposeService  string     `json:"composeService,omitempty"`
+	AgentID          int64      `json:"agentId"`
+	AgentName        string     `json:"agentName"`
+	AgentHost        string     `json:"agentHost"`
+	AgentAccess      string     `json:"agentAccess"`
+	Version          string     `json:"version"`
+	AvailableVersion string     `json:"availableVersion,omitempty"`
+	VersionChecked   bool       `json:"-"`
+	UpdateAvailable  *bool      `json:"updateAvailable,omitempty"`
+	ImageCheckedAt   *time.Time `json:"imageCheckedAt,omitempty"`
+	ComposeProject   string     `json:"composeProject,omitempty"`
+	ComposeService   string     `json:"composeService,omitempty"`
 }
 
 type ContainerDetails struct {
-	ImageID         string   `json:"imageId"`
-	LocalDigest     string   `json:"localDigest,omitempty"`
-	RegistryDigest  string   `json:"registryDigest,omitempty"`
-	UpdateAvailable *bool    `json:"updateAvailable,omitempty"`
-	ImageCreated    string   `json:"imageCreated,omitempty"`
-	ImageSize       int64    `json:"imageSize"`
-	Platform        string   `json:"platform,omitempty"`
-	RestartPolicy   string   `json:"restartPolicy,omitempty"`
-	Health          string   `json:"health,omitempty"`
-	ComposeProject  string   `json:"composeProject,omitempty"`
-	ComposeService  string   `json:"composeService,omitempty"`
-	Networks        []string `json:"networks"`
-	Mounts          []string `json:"mounts"`
+	ImageID          string   `json:"imageId"`
+	LocalDigest      string   `json:"localDigest,omitempty"`
+	RegistryDigest   string   `json:"registryDigest,omitempty"`
+	AvailableVersion string   `json:"availableVersion,omitempty"`
+	UpdateAvailable  *bool    `json:"updateAvailable,omitempty"`
+	ImageCreated     string   `json:"imageCreated,omitempty"`
+	ImageSize        int64    `json:"imageSize"`
+	Platform         string   `json:"platform,omitempty"`
+	RestartPolicy    string   `json:"restartPolicy,omitempty"`
+	Health           string   `json:"health,omitempty"`
+	ComposeProject   string   `json:"composeProject,omitempty"`
+	ComposeService   string   `json:"composeService,omitempty"`
+	Networks         []string `json:"networks"`
+	Mounts           []string `json:"mounts"`
 }

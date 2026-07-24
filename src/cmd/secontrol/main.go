@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -15,8 +16,13 @@ import (
 )
 
 func main() {
-	addr := env("SECONTROL_ADDR", ":5000")
-	dataDir := env("SECONTROL_DATA_DIR", "./data")
+	port := env("APP_PORT", "5000")
+	portNumber, err := strconv.Atoi(port)
+	if err != nil || portNumber < 1 || portNumber > 65535 {
+		panic(errors.New("invalid APP_PORT"))
+	}
+	addr := env("APP_ADDR", ":"+port)
+	dataDir := env("APP_DATA_DIR", "./data")
 	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		panic(err)
 	}
@@ -27,9 +33,9 @@ func main() {
 	}
 	defer control.Close()
 
-	poll, err := time.ParseDuration(env("SECONTROL_POLL_INTERVAL", "60s"))
-	if err != nil {
-		panic(errors.New("invalid SECONTROL_POLL_INTERVAL"))
+	poll, err := time.ParseDuration(env("POLL_INTERVAL", "60s"))
+	if err != nil || poll <= 0 {
+		panic(errors.New("invalid POLL_INTERVAL"))
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

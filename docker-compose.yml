@@ -4,13 +4,15 @@ services:
     container_name: secontrol
     restart: unless-stopped
     ports:
-      - "5000:5000"
+      - "${APP_PORT:-5000}:${APP_PORT:-5000}"
     volumes:
       - secontrol-data:/data
     environment:
-      SECONTROL_ADDR: ":5000"
-      SECONTROL_DATA_DIR: "/data"
-      SECONTROL_POLL_INTERVAL: "60s"
+      APP_PORT: "${APP_PORT:-5000}"
+      APP_ADDR: ":${APP_PORT:-5000}"
+      APP_DATA_DIR: "/data"
+      POLL_INTERVAL: "${POLL_INTERVAL:-60s}"
+      APP_MASTER_KEY: "${APP_MASTER_KEY:-}"
 
 volumes:
   secontrol-data:

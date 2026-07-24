@@ -37,12 +37,18 @@ function renderContainers(){
 function renderStorage(){
   const localStorage=fleetStorage.filter(volume=>!volume.isRemote),total=localStorage.reduce((sum,volume)=>sum+volume.totalBytes,0),used=localStorage.reduce((sum,volume)=>sum+volume.usedBytes,0);
   $("#storage-summary").textContent=`${fleetStorage.length} volumes · ${fmtBytes(used)} of ${fmtBytes(total)} local used`;
-  $("#storage-list").innerHTML=agents.length?agents.map(agent=>{
-    const volumes=fleetStorage.filter(volume=>volume.agentId===agent.id);
-    return `<section class="storage-machine"><button class="storage-machine-head" data-storage-machine="${agent.id}"><div class="machine-icon">▤</div><div><strong>${esc(agent.name)}</strong><small>${esc(agent.host)} · ${volumes.length} volume${volumes.length===1?"":"s"}</small></div><span class="badge ${agent.status}">${agent.status}</span><span>›</span></button><div class="storage-columns"><span>VOLUME</span><span>MOUNT POINT</span><span>USED</span><span>CAPACITY</span></div>${volumes.length?volumes.map(volume=>{const usage=pct(volume.usedBytes,volume.totalBytes),level=usage>=90?"critical":usage>=75?"warning":"";return `<div class="storage-row"><div><strong>${esc(volume.filesystem)}</strong><small>${esc(volume.type||"filesystem")}${volume.isRemote?' · <span class="remote-volume">network share</span>':""}</small></div><code title="${esc(volume.mountPoint)}">${esc(volume.mountPoint)}</code><div class="storage-usage"><div><strong>${usage}%</strong><small>${fmtBytes(volume.usedBytes)} of ${fmtBytes(volume.totalBytes)}</small></div><div class="bar ${level}"><i style="width:${Math.min(100,usage)}%"></i></div></div><strong>${fmtBytes(volume.availableBytes)} <small>free${volume.isRemote?" · excluded from total":""}</small></strong></div>`}).join(""):`<div class="storage-empty">No storage data collected yet. Refresh this machine to collect its mounted filesystems.</div>`}</section>`;
-  }).join(""):`<div class="empty">No machines connected.</div>`;
-  $$("[data-storage-machine]").forEach(button=>button.onclick=()=>showDetail(+button.dataset.storageMachine));
+  $("#storage-list").innerHTML=agents.length?agents.map(storageMachineModule).join(""):`<div class="empty">No machines connected.</div>`;
+  bindStorageMachineLinks($("#storage-list"));
 }
+function storageMachineModule(agent){
+  const volumes=fleetStorage.filter(volume=>volume.agentId===agent.id);
+  return `<section class="storage-machine"><button class="storage-machine-head" data-storage-machine="${agent.id}"><div class="machine-icon">▤</div><div><strong>${esc(agent.name)}</strong><small>${esc(agent.host)} · ${volumes.length} volume${volumes.length===1?"":"s"}</small></div><span class="badge ${agent.status}">${agent.status}</span><span>›</span></button><div class="storage-columns"><span>VOLUME</span><span>MOUNT POINT</span><span>USED</span><span>CAPACITY</span></div>${volumes.length?volumes.map(storageVolumeRow).join(""):`<div class="storage-empty">No storage data collected yet. Refresh this machine to collect its mounted filesystems.</div>`}</section>`;
+}
+function storageVolumeRow(volume){
+  const usage=pct(volume.usedBytes,volume.totalBytes),level=usage>=90?"critical":usage>=75?"warning":"";
+  return `<div class="storage-row"><div><strong>${esc(volume.filesystem)}</strong><small>${esc(volume.type||"filesystem")}${volume.isRemote?' · <span class="remote-volume">network share</span>':""}</small></div><code title="${esc(volume.mountPoint)}">${esc(volume.mountPoint)}</code><div class="storage-usage"><div><strong>${usage}%</strong><small>${fmtBytes(volume.usedBytes)} of ${fmtBytes(volume.totalBytes)}</small></div><div class="bar ${level}"><i style="width:${Math.min(100,usage)}%"></i></div></div><strong>${fmtBytes(volume.availableBytes)} <small>free${volume.isRemote?" · excluded from total":""}</small></strong></div>`;
+}
+function bindStorageMachineLinks(scope){scope.querySelectorAll("[data-storage-machine]").forEach(button=>button.onclick=()=>showDetail(+button.dataset.storageMachine))}
 function renderContainerList(target,containers,showMachine){
   const columns=`<span>APPLICATION</span><span>VERSION</span>${showMachine?"<span>MACHINE</span>":""}<span>UPTIME</span><span>IMAGE</span><span>STATE</span>`;
   target.innerHTML=`<div class="container-fleet-row head ${showMachine?"":"machine-containers"}">${columns}</div>`;
@@ -67,25 +73,30 @@ async function loadContainerUpdateStatuses(){
   await Promise.allSettled(fleetContainers.map(async(container,index)=>{
     const key=`${container.agentId}:${container.id}:${container.image}`,cached=containerUpdateCache.get(key);
     const persistedFresh=container.imageCheckedAt&&Date.now()-new Date(container.imageCheckedAt).getTime()<86400000;
-    let details=persistedFresh?container:null;
-    if(persistedFresh&&cached&&Date.now()-cached.checkedAt<86400000)details=cached.details;
-    if(!details){try{details=await api(`/api/agents/${container.agentId}/containers/${encodeURIComponent(container.id)}`);containerUpdateCache.set(key,{checkedAt:Date.now(),details});container.updateAvailable=details.updateAvailable;container.composeProject=details.composeProject;container.composeService=details.composeService;container.imageCheckedAt=new Date().toISOString()}catch{details={}}}
+    const memoryFresh=cached&&Date.now()-cached.checkedAt<86400000;
+    let details=memoryFresh?cached.details:persistedFresh?container:null;
+    if(!details){try{details=await api(`/api/agents/${container.agentId}/containers/${encodeURIComponent(container.id)}`);container.updateAvailable=details.updateAvailable;container.availableVersion=details.availableVersion;container.composeProject=details.composeProject;container.composeService=details.composeService;container.imageCheckedAt=new Date().toISOString()}catch{details={}}containerUpdateCache.set(key,{checkedAt:Date.now(),details})}
     $$(`[data-update-index="${index}"]`).forEach(badge=>{
       badge.className=`badge update-status ${details.updateAvailable===true?"pending":details.updateAvailable===false?"online":"neutral"}`;
-      badge.textContent=details.updateAvailable===true&&details.composeProject&&details.composeService?"Update":details.updateAvailable===true?"Update available":details.updateAvailable===false?"Current":"Unavailable";
-      if(details.updateAvailable===true&&details.composeProject&&details.composeService){
+      badge.textContent=details.updateAvailable===true&&details.availableVersion?`${details.availableVersion} available`:details.updateAvailable===true&&details.composeProject&&details.composeService?"Update":details.updateAvailable===true?"Update available":details.updateAvailable===false?"Current":"Unavailable";
+      if(details.updateAvailable===true&&!details.availableVersion&&details.composeProject&&details.composeService){
         badge.classList.add("update-action");badge.title=`Pull and recreate ${details.composeProject} / ${details.composeService}`;
         badge.onclick=event=>{event.stopPropagation();showUpdateConfirmation(container,key,details)};
-      }else if(details.updateAvailable===true)badge.title="Open details; automatic recreation is only available for Docker Compose services";
+      }else if(details.updateAvailable===true&&details.availableVersion&&details.composeProject&&details.composeService){
+        badge.classList.add("update-action");badge.title=`Review the Compose change required for ${details.availableVersion}`;
+        badge.onclick=event=>{event.stopPropagation();showPinnedUpdateInstructions(container,details)};
+      }else if(details.updateAvailable===true&&details.availableVersion)badge.title=`Image is pinned to ${container.version}; change the image tag to ${details.availableVersion}`;
+      else if(details.updateAvailable===true)badge.title="Open details; automatic recreation is only available for Docker Compose services";
     });
   }));
 }
 async function showUpdateConfirmation(container,key,details){
   const dialog=$("#update-confirm-dialog");
+  $("#confirm-container-update").hidden=false;$("#cancel-container-update").textContent="Cancel";$("#update-impact-title").textContent="What SeControl will do";$("#update-impact-text").textContent="Pull the selected Compose service image, recreate that service with its existing configuration, then refresh container inventory.";$("#pinned-compose-instruction").hidden=true;
   $("#update-confirm-title").textContent=`Update ${container.name}`;
   $("#update-confirm-subtitle").textContent=`${container.agentName} · ${details.composeProject} / ${details.composeService}`;
   $("#update-from-version").textContent=container.version||"Current";
-  $("#update-to-version").textContent=container.version||"Latest";
+  $("#update-to-version").textContent=details.availableVersion||container.version||"Latest";
   $("#update-from-digest").textContent="Loading digest…";
   $("#update-to-digest").textContent="Loading digest…";
   const confirmButton=$("#confirm-container-update");confirmButton.disabled=true;
@@ -94,7 +105,7 @@ async function showUpdateConfirmation(container,key,details){
     const metadata=details.localDigest&&details.registryDigest?details:await api(`/api/agents/${container.agentId}/containers/${encodeURIComponent(container.id)}`);
     $("#update-confirm-subtitle").textContent=`${container.agentName} · ${metadata.composeProject||details.composeProject} / ${metadata.composeService||details.composeService}`;
     $("#update-from-digest").textContent=shortDigest(metadata.localDigest||metadata.imageId);
-    $("#update-to-digest").textContent=shortDigest(metadata.registryDigest);
+    $("#update-to-version").textContent=metadata.availableVersion||container.version||"Latest";$("#update-to-digest").textContent=shortDigest(metadata.registryDigest);
     confirmButton.disabled=!metadata.localDigest||!metadata.registryDigest;
     confirmButton.onclick=()=>{dialog.close();runContainerUpdate(container,key)};
   }catch(error){
@@ -102,6 +113,20 @@ async function showUpdateConfirmation(container,key,details){
     $("#update-to-digest").textContent="Unavailable";
     toast(error.message);
   }
+}
+async function showPinnedUpdateInstructions(container,details){
+  const dialog=$("#update-confirm-dialog"),target=details.availableVersion;
+  $("#update-confirm-title").textContent=`Update ${container.name}`;
+  $("#update-confirm-subtitle").textContent=`${container.agentName} · ${details.composeProject} / ${details.composeService}`;
+  $("#update-from-version").textContent=container.version||"Current";$("#update-to-version").textContent=target;
+  $("#update-from-digest").textContent="Loading digest…";$("#update-to-digest").textContent="Loading digest…";
+  $("#confirm-container-update").hidden=true;$("#cancel-container-update").textContent="Close";
+  $("#update-impact-title").textContent="Compose configuration change required";
+  $("#update-impact-text").textContent=`This service is pinned to ${container.version}. SeControl cannot safely edit your Compose file. Change its image tag to ${target}, then pull and recreate the service.`;
+  const imageBase=container.image.replace(/@.*$/,"").replace(/:[^/:]+$/,""),instruction=$("#pinned-compose-instruction");
+  instruction.textContent=`image: ${imageBase}:${target}\n\ndocker compose pull ${details.composeService}\ndocker compose up -d ${details.composeService}`;
+  instruction.hidden=false;dialog.showModal();
+  try{const metadata=await api(`/api/agents/${container.agentId}/containers/${encodeURIComponent(container.id)}`);$("#update-from-digest").textContent=shortDigest(metadata.localDigest||metadata.imageId);$("#update-to-digest").textContent=shortDigest(metadata.registryDigest)}catch{$("#update-from-digest").textContent="Unavailable";$("#update-to-digest").textContent="Unavailable"}
 }
 async function runContainerUpdate(container,key){
   const dialog=$("#update-console-dialog"),output=$("#update-console-output"),state=$("#update-console-state"),close=$("#close-update-console");
@@ -125,9 +150,9 @@ function showContainerDetail(container){
   $$("[data-container-action]").forEach(button=>button.onclick=async()=>{const action=button.dataset.containerAction;if((action==="stop"||action==="restart")&&!confirm(`${action[0].toUpperCase()+action.slice(1)} ${container.name}?`))return;$$("[data-container-action]").forEach(item=>item.disabled=true);button.textContent=`${action[0].toUpperCase()+action.slice(1)}ing…`;try{await api(`/api/agents/${container.agentId}/containers/${encodeURIComponent(container.id)}/actions/${action}`,{method:"POST"});$("#container-dialog").close();await load();const updated=fleetContainers.find(item=>item.id===container.id&&item.agentId===container.agentId);if(updated)showContainerDetail(updated);toast(`Container ${action==="stop"?"stopped":action+"ed"}`)}catch(error){toast(error.message);$("#container-dialog").close();showContainerDetail(container)}});
   const advanced=document.createElement("div");advanced.className="container-advanced";advanced.innerHTML=`<div class="advanced-loading">Checking image and runtime metadata…</div>`;$(".container-detail-grid").after(advanced);
   api(`/api/agents/${container.agentId}/containers/${encodeURIComponent(container.id)}`).then(details=>{
-    const update=details.updateAvailable===true?`<span class="badge pending">New image available</span>`:details.updateAvailable===false?`<span class="badge online">Image is current</span>`:`<span class="badge pending">Registry check unavailable</span>`;
+    const update=details.updateAvailable===true?`<span class="badge pending">${details.availableVersion?`${esc(details.availableVersion)} available`:"New image available"}</span>`:details.updateAvailable===false?`<span class="badge online">Image is current</span>`:`<span class="badge pending">Registry check unavailable</span>`;
     const compose=details.composeProject?`<div class="wide"><small>DOCKER COMPOSE</small><strong>${esc(details.composeProject)} / ${esc(details.composeService||"service")}</strong></div>`:"";
-    advanced.innerHTML=`<div class="advanced-head"><div><h3>Image & runtime</h3><p>Digest comparison checks the currently configured image tag.</p></div>${update}</div><div class="advanced-grid"><div><small>PLATFORM</small><strong>${esc(details.platform||"Unknown")}</strong></div><div><small>IMAGE SIZE</small><strong>${fmtBytes(details.imageSize)}</strong></div><div><small>RESTART POLICY</small><strong>${esc(details.restartPolicy||"none")}</strong></div><div><small>HEALTH CHECK</small><strong>${esc(details.health||"none")}</strong></div>${compose}<div class="wide"><small>LOCAL DIGEST</small><code>${esc(details.localDigest||details.imageId||"Unavailable")}</code></div><div class="wide"><small>REGISTRY DIGEST</small><code>${esc(details.registryDigest||"Unavailable")}</code></div><div class="wide"><small>NETWORKS</small><strong>${esc((details.networks||[]).join(", ")||"None")}</strong></div><div class="wide"><small>MOUNTS</small><strong>${esc((details.mounts||[]).join(", ")||"None")}</strong></div></div>`;
+    advanced.innerHTML=`<div class="advanced-head"><div><h3>Image & runtime</h3><p>${details.availableVersion?`Pinned to ${esc(container.version)}. Change the Compose image tag to ${esc(details.availableVersion)} to upgrade.`:"Digest comparison checks the currently configured image tag."}</p></div>${update}</div><div class="advanced-grid">${details.availableVersion?`<div><small>CURRENT VERSION</small><strong>${esc(container.version)}</strong></div><div><small>AVAILABLE VERSION</small><strong>${esc(details.availableVersion)}</strong></div>`:""}<div><small>PLATFORM</small><strong>${esc(details.platform||"Unknown")}</strong></div><div><small>IMAGE SIZE</small><strong>${fmtBytes(details.imageSize)}</strong></div><div><small>RESTART POLICY</small><strong>${esc(details.restartPolicy||"none")}</strong></div><div><small>HEALTH CHECK</small><strong>${esc(details.health||"none")}</strong></div>${compose}<div class="wide"><small>LOCAL DIGEST</small><code>${esc(details.localDigest||details.imageId||"Unavailable")}</code></div><div class="wide"><small>REGISTRY DIGEST</small><code>${esc(details.registryDigest||"Unavailable")}</code></div><div class="wide"><small>NETWORKS</small><strong>${esc((details.networks||[]).join(", ")||"None")}</strong></div><div class="wide"><small>MOUNTS</small><strong>${esc((details.mounts||[]).join(", ")||"None")}</strong></div></div>`;
   }).catch(error=>advanced.innerHTML=`<div class="advanced-error">Additional metadata could not be loaded: ${esc(error.message)}</div>`);
   $("#close-container-detail").onclick=()=>$("#container-dialog").close();
   $("#done-container-detail").onclick=()=>$("#container-dialog").close();
@@ -136,9 +161,10 @@ function showContainerDetail(container){
 }
 async function showDetail(id,updateLocation=true){
   const a=agents.find(x=>x.id===id);if(!a)return;showPage("detail",false);if(updateLocation&&location.hash!==`#machine-${id}`)history.pushState(null,"",`#machine-${id}`);
-  $("#detail-page").innerHTML=`<button class="back">← Back to machines</button><div class="detail-head"><div class="machine-icon">▣</div><div><h2>${esc(a.name)}</h2><p>${esc(a.username)}@${esc(a.host)}:${a.port} · ${esc(a.os||"Awaiting first refresh")}</p></div><span class="badge ${a.status}">${a.status}</span></div><section class="panel"><div class="detail-stats"><div><small>LOAD</small><strong>${a.load1.toFixed(2)}</strong></div><div><small>MEMORY</small><strong>${pct(a.memoryUsed,a.memoryTotal)}%</strong></div><div><small>DISK</small><strong>${pct(a.diskUsed,a.diskTotal)}%</strong></div><div><small>UPTIME</small><strong>${a.uptimeSeconds?Math.floor(a.uptimeSeconds/86400)+" days":"—"}</strong></div></div></section><div class="machine-system-grid"><section class="panel system-panel"><div class="panel-head"><div><h2>Networks</h2><p>Interfaces and assigned addresses</p></div></div><div id="machine-networks"><div class="empty">Loading networks…</div></div></section><section class="panel system-panel"><div class="panel-head"><div><h2>Services</h2><p>System service health and state</p></div><div id="service-summary"></div></div><div id="machine-services"><div class="empty">Loading services…</div></div></section></div><section class="panel containers"><div class="panel-head"><div><h2>Docker applications</h2><p>Containers discovered on this machine</p></div><button class="secondary" id="refresh-one">↻ Refresh</button></div><div id="container-list"><div class="empty">Loading containers…</div></div></section>`;
+  $("#detail-page").innerHTML=`<button class="back">← Back to machines</button><div class="detail-head"><div class="machine-icon">▣</div><div><h2>${esc(a.name)}</h2><p>${esc(a.username)}@${esc(a.host)}:${a.port} · ${esc(a.os||"Awaiting first refresh")}</p></div><span class="badge ${a.status}">${a.status}</span></div><section class="panel"><div class="detail-stats"><div><small>LOAD</small><strong>${a.load1.toFixed(2)}</strong></div><div><small>MEMORY</small><strong>${pct(a.memoryUsed,a.memoryTotal)}%</strong></div><div><small>DISK</small><strong>${pct(a.diskUsed,a.diskTotal)}%</strong></div><div><small>UPTIME</small><strong>${a.uptimeSeconds?Math.floor(a.uptimeSeconds/86400)+" days":"—"}</strong></div></div></section><div class="machine-system-grid"><section class="panel system-panel"><div class="panel-head"><div><h2>Networks</h2><p>Interfaces and assigned addresses</p></div></div><div id="machine-networks"><div class="empty">Loading networks…</div></div></section><section class="panel system-panel"><div class="panel-head"><div><h2>Services</h2><p>System service health and state</p></div><div id="service-summary"></div></div><div id="machine-services"><div class="empty">Loading services…</div></div></section></div><section class="panel machine-storage-panel"><div class="panel-head"><div><h2>Storage</h2><p>Mounted filesystems and capacity on this machine</p></div></div><div id="machine-storage"></div></section><section class="panel containers"><div class="panel-head"><div><h2>Docker applications</h2><p>Containers discovered on this machine</p></div><button class="secondary" id="refresh-one">↻ Refresh</button></div><div id="container-list"><div class="empty">Loading containers…</div></div></section>`;
   $(".back").onclick=()=>showPage("machines");$("#refresh-one").onclick=async()=>{try{await api(`/api/agents/${id}/refresh`,{method:"POST"});toast("Machine refreshed");await load();showDetail(id)}catch(e){toast(e.message)}};
   renderContainerList($("#container-list"),fleetContainers.filter(container=>container.agentId===id),false);
+  $("#machine-storage").innerHTML=storageMachineModule(a);bindStorageMachineLinks($("#machine-storage"));
   try{renderMachineSystem(await api(`/api/agents/${id}/system`))}catch(e){toast(e.message)}
 }
 function renderMachineSystem(system){
@@ -170,24 +196,29 @@ function renderKeys(){
   const select=$("#machine-key-select");
   const selectedKeyID=select.value;
   select.innerHTML=sshKeys.length?`<option value="">Choose a saved key…</option>`+sshKeys.map(k=>`<option value="${k.id}">${esc(k.name)}</option>`).join(""):`<option value="">No saved keys — add one in Settings</option>`;
-  $("#key-list").innerHTML=sshKeys.length?sshKeys.map(k=>`<div class="key-row"><div><strong>${esc(k.name)}</strong><small>${esc((k.publicKey||"Public key unavailable").slice(0,54))}${k.publicKey?.length>54?"…":""} · Added ${new Date(k.createdAt).toLocaleDateString()}</small></div><button class="danger-button" data-delete-key="${k.id}">Remove</button></div>`).join(""):`<div class="key-empty">No SSH keys saved yet.</div>`;
-  $$("[data-delete-key]").forEach(button=>button.onclick=async()=>{if(!confirm("Remove this saved SSH key? Existing machines will continue to work."))return;try{await api(`/api/ssh-keys/${button.dataset.deleteKey}`,{method:"DELETE"});sshKeys=sshKeys.filter(k=>k.id!==+button.dataset.deleteKey);renderKeys();toast("SSH key removed")}catch(e){toast(e.message)}});
-  sshKeys.forEach(key=>{
-    const button=$(`[data-delete-key="${key.id}"]`),meta=button?.closest(".key-row")?.querySelector("small"),usage=key.usageCount||0;
-    if(meta)meta.append(` · ${usage} machine${usage===1?"":"s"}`);
-    if(button&&usage>0){button.disabled=true;button.title="This key is assigned to a machine and cannot be removed"}
-  });
+  $("#key-list").innerHTML=sshKeys.length?sshKeys.map(k=>`<button class="key-row" data-key-detail="${k.id}"><strong>${esc(k.name)}</strong>${k.usageCount?`<span class="badge online">In use</span>`:""}<span class="key-chevron">›</span></button>`).join(""):`<div class="key-empty">No SSH keys saved yet.</div>`;
+  $$("[data-key-detail]").forEach(button=>button.onclick=()=>showKeyDetail(+button.dataset.keyDetail));
   if(selectedKeyID&&sshKeys.some(key=>String(key.id)===selectedKeyID))select.value=selectedKeyID;
   select.onchange=()=>{showSetupCommand();invalidateConnectionTest()};
   if(select.value)showSetupCommand();else $("#key-setup").hidden=true;
 }
+let selectedKeyDetailID=0;
+function showKeyDetail(id){
+  const key=sshKeys.find(item=>item.id===id);if(!key)return;selectedKeyDetailID=id;
+  $("#key-detail-name").value=key.name;$("#key-detail-status").innerHTML=key.usageCount?`<span class="badge online">In use by ${key.usageCount} machine${key.usageCount===1?"":"s"}</span>`:`<span class="badge neutral">Not in use</span>`;
+  $("#key-detail-created").textContent=new Date(key.createdAt).toLocaleDateString();
+  $("#key-detail-machines").innerHTML=key.machines?.length?key.machines.map(machine=>`<span class="machine-pill">${esc(machine)}</span>`).join(""):`<span class="detail-muted">No machines use this key.</span>`;
+  $("#key-detail-public").textContent=key.publicKey||"Public key unavailable";$("#key-detail-error").textContent="";
+  const remove=$("#delete-key-detail");remove.disabled=key.usageCount>0;remove.title=key.usageCount?"This key is assigned to a machine and cannot be removed":"";
+  $("#key-detail-dialog").showModal();
+}
 function showSetupCommand(){
   const key=sshKeys.find(k=>k.id===+$("#machine-key-select").value),box=$("#key-setup");
   if(!key?.publicKey){box.hidden=true;return}
-  const quoted=key.publicKey.replaceAll("'","'\\''");
+  const quoted=key.publicKey.replaceAll("'","'\\''"),identity=key.publicKey.trim().split(/\s+/).slice(0,2).join(" ").replaceAll("'","'\\''");
   $("#setup-command").textContent=`install -d -m 700 "$HOME/.ssh"
 touch "$HOME/.ssh/authorized_keys" && chmod 600 "$HOME/.ssh/authorized_keys"
-grep -qxF '${quoted}' "$HOME/.ssh/authorized_keys" || \\
+awk '{print $1 " " $2}' "$HOME/.ssh/authorized_keys" | grep -qxF '${identity}' || \\
   printf '%s\\n' '${quoted}' >> "$HOME/.ssh/authorized_keys"`;
   box.hidden=false;
 }
@@ -222,6 +253,10 @@ $$('input[name="theme"]').forEach(r=>r.onchange=()=>setTheme(r.value));
 $("#show-key-form").onclick=()=>{$("#key-form").reset();$$(".import-key-field").forEach(el=>el.hidden=true);$(".generate-key-help").hidden=false;$("#key-error").textContent="";$("#key-dialog").showModal()};
 function closeKeyDialog(){$("#key-form").reset();$("#key-error").textContent="";$("#key-dialog").close()}
 $("#cancel-key").onclick=closeKeyDialog;$("#cancel-key-bottom").onclick=closeKeyDialog;
+function closeKeyDetail(){$("#key-detail-error").textContent="";selectedKeyDetailID=0;$("#key-detail-dialog").close()}
+$("#close-key-detail").onclick=closeKeyDetail;$("#cancel-key-detail").onclick=closeKeyDetail;
+$("#key-detail-form").onsubmit=async event=>{event.preventDefault();const name=$("#key-detail-name").value.trim();$("#key-detail-error").textContent="";try{await api(`/api/ssh-keys/${selectedKeyDetailID}`,{method:"PATCH",body:JSON.stringify({name})});sshKeys=await api("/api/ssh-keys");closeKeyDetail();renderKeys();toast("SSH key name updated")}catch(error){$("#key-detail-error").textContent=error.message}};
+$("#delete-key-detail").onclick=async()=>{const key=sshKeys.find(item=>item.id===selectedKeyDetailID);if(!key||key.usageCount||!confirm(`Remove ${key.name}?`))return;try{await api(`/api/ssh-keys/${key.id}`,{method:"DELETE"});sshKeys=sshKeys.filter(item=>item.id!==key.id);closeKeyDetail();renderKeys();toast("SSH key removed")}catch(error){$("#key-detail-error").textContent=error.message}};
 $$('input[name="keyMode"]').forEach(r=>r.onchange=()=>{$$(".import-key-field").forEach(el=>el.hidden=r.value!=="import");$(".generate-key-help").hidden=r.value!=="generate"});
 $("#key-form").onsubmit=async e=>{e.preventDefault();const data=Object.fromEntries(new FormData(e.target)),generate=data.keyMode==="generate";delete data.keyMode;$("#key-error").textContent="";try{await api(generate?"/api/ssh-keys/generate":"/api/ssh-keys",{method:"POST",body:JSON.stringify(data)});closeKeyDialog();sshKeys=await api("/api/ssh-keys");renderKeys();toast(generate?"Ed25519 key generated securely":"SSH key saved securely")}catch(err){$("#key-error").textContent=err.message}};
 $("#copy-setup").onclick=async()=>{await navigator.clipboard.writeText($("#setup-command").textContent);toast("Setup command copied")};

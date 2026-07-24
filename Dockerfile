@@ -17,5 +17,5 @@ RUN mkdir -p /data && chown secontrol:secontrol /data
 USER secontrol
 EXPOSE 5000
 VOLUME ["/data"]
-ENV SECONTROL_ADDR=:5000 SECONTROL_DATA_DIR=/data
+ENV APP_ADDR=:5000 APP_DATA_DIR=/data
 ENTRYPOINT ["secontrol"]

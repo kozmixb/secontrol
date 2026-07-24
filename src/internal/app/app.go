@@ -21,7 +21,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kozmixb/secontrol/assets"
 	"golang.org/x/crypto/ssh"
 	_ "modernc.org/sqlite"
 )
@@ -61,104 +60,6 @@ func New(dbPath, dataDir string) (*App, error) {
 }
 
 func (a *App) Close() error { return a.db.Close() }
-
-func (a *App) migrate() error {
-	_, err := a.db.Exec(`
-CREATE TABLE IF NOT EXISTS agents (
- id INTEGER PRIMARY KEY, name TEXT NOT NULL, host TEXT NOT NULL, port INTEGER NOT NULL DEFAULT 22,
- username TEXT NOT NULL, auth_type TEXT NOT NULL, credential BLOB NOT NULL,
- status TEXT NOT NULL DEFAULT 'pending', last_error TEXT NOT NULL DEFAULT '', last_seen DATETIME,
- os TEXT NOT NULL DEFAULT '', kernel TEXT NOT NULL DEFAULT '', uptime_seconds INTEGER NOT NULL DEFAULT 0,
- load1 REAL NOT NULL DEFAULT 0, memory_total INTEGER NOT NULL DEFAULT 0, memory_used INTEGER NOT NULL DEFAULT 0,
- disk_total INTEGER NOT NULL DEFAULT 0, disk_used INTEGER NOT NULL DEFAULT 0, cpu_count INTEGER NOT NULL DEFAULT 0,
- is_vm INTEGER NOT NULL DEFAULT 0, virtualization TEXT NOT NULL DEFAULT '', access_level TEXT NOT NULL DEFAULT 'regular',
- created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-CREATE TABLE IF NOT EXISTS ssh_keys (
- id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, private_key BLOB NOT NULL, public_key TEXT NOT NULL DEFAULT '',
- created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-CREATE TABLE IF NOT EXISTS containers (
- agent_id INTEGER NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL, image TEXT NOT NULL, status TEXT NOT NULL,
- state TEXT NOT NULL, ports TEXT NOT NULL, created TEXT NOT NULL, uptime TEXT NOT NULL DEFAULT '', updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
- image_version TEXT NOT NULL DEFAULT '', update_available INTEGER, registry_digest TEXT NOT NULL DEFAULT '', image_checked_at DATETIME,
- compose_project TEXT NOT NULL DEFAULT '', compose_service TEXT NOT NULL DEFAULT '',
- PRIMARY KEY(agent_id,id), FOREIGN KEY(agent_id) REFERENCES agents(id) ON DELETE CASCADE
-);
-CREATE TABLE IF NOT EXISTS metric_samples (
- id INTEGER PRIMARY KEY, agent_id INTEGER NOT NULL, recorded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
- load1 REAL NOT NULL, memory_used INTEGER NOT NULL, disk_used INTEGER NOT NULL,
- FOREIGN KEY(agent_id) REFERENCES agents(id) ON DELETE CASCADE
-);
-CREATE TABLE IF NOT EXISTS network_interfaces (
- agent_id INTEGER NOT NULL, name TEXT NOT NULL, state TEXT NOT NULL DEFAULT '', mac TEXT NOT NULL DEFAULT '', addresses TEXT NOT NULL DEFAULT '[]',
- PRIMARY KEY(agent_id,name), FOREIGN KEY(agent_id) REFERENCES agents(id) ON DELETE CASCADE
-);
-CREATE TABLE IF NOT EXISTS system_services (
- agent_id INTEGER NOT NULL, name TEXT NOT NULL, load_state TEXT NOT NULL DEFAULT '', active_state TEXT NOT NULL DEFAULT '', sub_state TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '',
- PRIMARY KEY(agent_id,name), FOREIGN KEY(agent_id) REFERENCES agents(id) ON DELETE CASCADE
-);
-CREATE TABLE IF NOT EXISTS storage_volumes (
- agent_id INTEGER NOT NULL, filesystem TEXT NOT NULL, fs_type TEXT NOT NULL DEFAULT '', mount_point TEXT NOT NULL,
- total_bytes INTEGER NOT NULL DEFAULT 0, used_bytes INTEGER NOT NULL DEFAULT 0, available_bytes INTEGER NOT NULL DEFAULT 0,
- PRIMARY KEY(agent_id,filesystem,mount_point), FOREIGN KEY(agent_id) REFERENCES agents(id) ON DELETE CASCADE
-);
-CREATE INDEX IF NOT EXISTS idx_metrics_agent_time ON metric_samples(agent_id, recorded_at);
-`)
-	if err != nil {
-		return err
-	}
-	// Upgrade databases created before public keys were stored.
-	_, _ = a.db.Exec("ALTER TABLE ssh_keys ADD COLUMN public_key TEXT NOT NULL DEFAULT ''")
-	_, _ = a.db.Exec("ALTER TABLE agents ADD COLUMN ssh_key_id INTEGER REFERENCES ssh_keys(id)")
-	_, _ = a.db.Exec("ALTER TABLE agents ADD COLUMN is_vm INTEGER NOT NULL DEFAULT 0")
-	_, _ = a.db.Exec("ALTER TABLE agents ADD COLUMN virtualization TEXT NOT NULL DEFAULT ''")
-	_, _ = a.db.Exec("ALTER TABLE agents ADD COLUMN access_level TEXT NOT NULL DEFAULT 'regular'")
-	_, _ = a.db.Exec("ALTER TABLE containers ADD COLUMN uptime TEXT NOT NULL DEFAULT ''")
-	_, _ = a.db.Exec("ALTER TABLE containers ADD COLUMN image_version TEXT NOT NULL DEFAULT ''")
-	_, _ = a.db.Exec("ALTER TABLE containers ADD COLUMN update_available INTEGER")
-	_, _ = a.db.Exec("ALTER TABLE containers ADD COLUMN registry_digest TEXT NOT NULL DEFAULT ''")
-	_, _ = a.db.Exec("ALTER TABLE containers ADD COLUMN image_checked_at DATETIME")
-	_, _ = a.db.Exec("ALTER TABLE containers ADD COLUMN compose_project TEXT NOT NULL DEFAULT ''")
-	_, _ = a.db.Exec("ALTER TABLE containers ADD COLUMN compose_service TEXT NOT NULL DEFAULT ''")
-	return nil
-}
-
-func (a *App) Handler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
-	mux.HandleFunc("GET /api/overview", a.overview)
-	mux.HandleFunc("GET /api/containers", a.listFleetContainers)
-	mux.HandleFunc("GET /api/storage", a.listFleetStorage)
-	mux.HandleFunc("GET /api/agents", a.listAgents)
-	mux.HandleFunc("POST /api/agents", a.createAgent)
-	mux.HandleFunc("POST /api/agents/test", a.testAgentConnection)
-	mux.HandleFunc("GET /api/ssh-keys", a.listSSHKeys)
-	mux.HandleFunc("POST /api/ssh-keys", a.createSSHKey)
-	mux.HandleFunc("POST /api/ssh-keys/generate", a.generateSSHKey)
-	mux.HandleFunc("DELETE /api/ssh-keys/{id}", a.deleteSSHKey)
-	mux.HandleFunc("GET /api/agents/{id}", a.getAgent)
-	mux.HandleFunc("DELETE /api/agents/{id}", a.deleteAgent)
-	mux.HandleFunc("POST /api/agents/{id}/refresh", a.refreshAgent)
-	mux.HandleFunc("GET /api/agents/{id}/containers", a.listContainers)
-	mux.HandleFunc("GET /api/agents/{id}/system", a.machineSystem)
-	mux.HandleFunc("GET /api/agents/{id}/containers/{container}", a.inspectContainer)
-	mux.HandleFunc("POST /api/agents/{id}/containers/{container}/actions/{action}", a.containerAction)
-	mux.HandleFunc("GET /api/agents/{id}/metrics", a.metrics)
-	mux.HandleFunc("GET /api/agents/{id}/logs", a.logs)
-	mux.Handle("/", http.FileServer(http.FS(assets.Files)))
-	return securityHeaders(mux)
-}
-
-func securityHeaders(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("Referrer-Policy", "same-origin")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'")
-		next.ServeHTTP(w, r)
-	})
-}
 
 func (a *App) Poll(ctx context.Context, interval time.Duration) {
 	a.refreshAll(ctx)
@@ -312,7 +213,9 @@ func (a *App) testAgentConnection(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) listSSHKeys(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.db.QueryContext(r.Context(), `SELECT id,name,public_key,
-		(SELECT COUNT(*) FROM agents WHERE agents.ssh_key_id=ssh_keys.id),created_at
+		(SELECT COUNT(*) FROM agents WHERE agents.ssh_key_id=ssh_keys.id),
+		COALESCE((SELECT group_concat(name, char(31)) FROM agents WHERE agents.ssh_key_id=ssh_keys.id),''),
+		created_at
 		FROM ssh_keys ORDER BY name`)
 	if err != nil {
 		errorJSON(w, 500, err.Error())
@@ -322,7 +225,13 @@ func (a *App) listSSHKeys(w http.ResponseWriter, r *http.Request) {
 	keys := []SSHKey{}
 	for rows.Next() {
 		var key SSHKey
-		if rows.Scan(&key.ID, &key.Name, &key.PublicKey, &key.UsageCount, &key.CreatedAt) == nil {
+		var machines string
+		if rows.Scan(&key.ID, &key.Name, &key.PublicKey, &key.UsageCount, &machines, &key.CreatedAt) == nil {
+			key.PublicKey = publicKeyWithSeControlComment(key.PublicKey, key.Name)
+			key.Machines = []string{}
+			if machines != "" {
+				key.Machines = strings.Split(machines, string(rune(31)))
+			}
 			keys = append(keys, key)
 		}
 	}
@@ -405,7 +314,7 @@ func (a *App) generateSSHKey(w http.ResponseWriter, r *http.Request) {
 		errorJSON(w, 500, "could not encode public key")
 		return
 	}
-	publicText := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPublic)))
+	publicText := publicKeyWithSeControlComment(strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPublic))), in.Name)
 	encrypted, err := a.encrypt(privatePEM)
 	if err != nil {
 		errorJSON(w, 500, "could not protect generated key")
@@ -422,6 +331,64 @@ func (a *App) generateSSHKey(w http.ResponseWriter, r *http.Request) {
 	}
 	id, _ := result.LastInsertId()
 	writeJSON(w, 201, map[string]any{"id": id, "publicKey": publicText})
+}
+
+func publicKeyWithSeControlComment(publicKey, name string) string {
+	fields := strings.Fields(strings.TrimSpace(publicKey))
+	if len(fields) < 2 {
+		return strings.TrimSpace(publicKey)
+	}
+	var comment strings.Builder
+	lastDash := false
+	for _, char := range strings.ToLower(strings.TrimSpace(name)) {
+		valid := char >= 'a' && char <= 'z' || char >= '0' && char <= '9' || char == '.' || char == '_' || char == '-'
+		if valid {
+			comment.WriteRune(char)
+			lastDash = char == '-'
+		} else if !lastDash {
+			comment.WriteByte('-')
+			lastDash = true
+		}
+	}
+	suffix := strings.Trim(comment.String(), "-")
+	if suffix == "" {
+		suffix = "key"
+	}
+	return fields[0] + " " + fields[1] + " secontrol-" + suffix
+}
+
+func (a *App) renameSSHKey(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var in struct {
+		Name string `json:"name"`
+	}
+	if err := decodeJSON(r, &in); err != nil {
+		errorJSON(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	in.Name = strings.TrimSpace(in.Name)
+	if in.Name == "" {
+		errorJSON(w, http.StatusBadRequest, "key name is required")
+		return
+	}
+	result, err := a.db.ExecContext(r.Context(), "UPDATE ssh_keys SET name=? WHERE id=?", in.Name, id)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "unique") {
+			errorJSON(w, http.StatusConflict, "a key with this name already exists")
+			return
+		}
+		errorJSON(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	updated, _ := result.RowsAffected()
+	if updated == 0 {
+		errorJSON(w, http.StatusNotFound, "SSH key not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": id, "name": in.Name})
 }
 
 func (a *App) deleteSSHKey(w http.ResponseWriter, r *http.Request) {
@@ -568,7 +535,7 @@ func (a *App) listContainers(w http.ResponseWriter, r *http.Request) {
 func (a *App) listFleetContainers(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.db.QueryContext(r.Context(), `SELECT
 		c.id,c.name,c.image,c.status,c.state,c.ports,c.created,c.uptime,
-		c.image_version,c.update_available,c.image_checked_at,c.compose_project,c.compose_service,
+		c.image_version,c.available_version,c.version_checked,c.update_available,c.image_checked_at,c.compose_project,c.compose_service,
 		a.id,a.name,a.host,a.access_level
 		FROM containers c
 		JOIN agents a ON a.id=c.agent_id
@@ -585,7 +552,7 @@ func (a *App) listFleetContainers(w http.ResponseWriter, r *http.Request) {
 		var imageCheckedAt sql.NullTime
 		if err := rows.Scan(
 			&item.ID, &item.Name, &item.Image, &item.Status, &item.State, &item.Ports, &item.Created, &item.Uptime,
-			&item.Version, &updateAvailable, &imageCheckedAt, &item.ComposeProject, &item.ComposeService,
+			&item.Version, &item.AvailableVersion, &item.VersionChecked, &updateAvailable, &imageCheckedAt, &item.ComposeProject, &item.ComposeService,
 			&item.AgentID, &item.AgentName, &item.AgentHost, &item.AgentAccess,
 		); err != nil {
 			errorJSON(w, 500, err.Error())
@@ -599,6 +566,10 @@ func (a *App) listFleetContainers(w http.ResponseWriter, r *http.Request) {
 		}
 		if imageCheckedAt.Valid {
 			item.ImageCheckedAt = &imageCheckedAt.Time
+		}
+		if _, semantic := parseSemanticTag(item.Version); semantic && !item.VersionChecked {
+			item.ImageCheckedAt = nil
+			item.UpdateAvailable = nil
 		}
 		items = append(items, item)
 	}
@@ -615,17 +586,19 @@ func (a *App) inspectContainer(w http.ResponseWriter, r *http.Request) {
 		errorJSON(w, 400, "container id is required")
 		return
 	}
-	var image, cachedRegistry string
+	var image, cachedRegistry, cachedAvailableVersion string
+	var versionChecked bool
 	var cachedUpdate sql.NullBool
 	var checkedAt sql.NullTime
-	if err := a.db.QueryRowContext(r.Context(), "SELECT image,registry_digest,update_available,image_checked_at FROM containers WHERE agent_id=? AND id=?", id, containerID).Scan(&image, &cachedRegistry, &cachedUpdate, &checkedAt); errors.Is(err, sql.ErrNoRows) {
+	if err := a.db.QueryRowContext(r.Context(), "SELECT image,registry_digest,available_version,version_checked,update_available,image_checked_at FROM containers WHERE agent_id=? AND id=?", id, containerID).Scan(&image, &cachedRegistry, &cachedAvailableVersion, &versionChecked, &cachedUpdate, &checkedAt); errors.Is(err, sql.ErrNoRows) {
 		errorJSON(w, 404, "container not found")
 		return
 	} else if err != nil {
 		errorJSON(w, 500, err.Error())
 		return
 	}
-	checkRegistry := !checkedAt.Valid || time.Since(checkedAt.Time) >= 24*time.Hour
+	_, semanticImage := parseSemanticTag(containerVersion(image))
+	checkRegistry := !checkedAt.Valid || time.Since(checkedAt.Time) >= 24*time.Hour || (semanticImage && !versionChecked)
 	registryCommand := "true"
 	if checkRegistry {
 		registryCommand = `docker buildx imagetools inspect "$image" --format '{{json .Manifest.Digest}}' 2>/dev/null || docker manifest inspect --verbose "$image" 2>/dev/null || true`
@@ -643,6 +616,10 @@ printf '\nREGISTRY\n'; %s`, shellQuote(containerID), shellQuote(image), registry
 	defer cancel()
 	out, err := a.runSSH(ctx, id, command)
 	if err != nil {
+		if checkRegistry {
+			_, _ = a.db.ExecContext(r.Context(), `UPDATE containers SET available_version='',version_checked=?,update_available=NULL,registry_digest='',image_checked_at=CURRENT_TIMESTAMP WHERE agent_id=? AND id=?`,
+				semanticImage, id, containerID)
+		}
 		errorJSON(w, 502, err.Error())
 		return
 	}
@@ -677,17 +654,34 @@ printf '\nREGISTRY\n'; %s`, shellQuote(containerID), shellQuote(image), registry
 		details.Platform = meta[3]
 	}
 	details.RegistryDigest = cachedRegistry
+	details.AvailableVersion = cachedAvailableVersion
 	if cachedUpdate.Valid {
 		available := cachedUpdate.Bool
 		details.UpdateAvailable = &available
 	}
+	semanticCheckCompleted := versionChecked
 	if checkRegistry {
-		details.RegistryDigest = findDigest([]byte(sections["REGISTRY"]))
-		if details.RegistryDigest == "" {
-			details.RegistryDigest = a.publicRegistryDigest(r.Context(), image)
+		if semanticImage {
+			availableVersion, digest, checked := a.publicRegistryNewerVersion(r.Context(), image)
+			semanticCheckCompleted = checked
+			details.RegistryDigest = digest
+			if checked {
+				details.AvailableVersion = availableVersion
+				available := availableVersion != ""
+				details.UpdateAvailable = &available
+			} else {
+				details.AvailableVersion = ""
+				details.UpdateAvailable = nil
+			}
+		} else {
+			details.AvailableVersion = ""
+			details.RegistryDigest = findDigest([]byte(sections["REGISTRY"]))
+			if details.RegistryDigest == "" {
+				details.RegistryDigest = a.publicRegistryDigest(r.Context(), image)
+			}
 		}
 	}
-	if checkRegistry && details.LocalDigest != "" && details.RegistryDigest != "" {
+	if checkRegistry && !semanticImage && details.LocalDigest != "" && details.RegistryDigest != "" {
 		available := details.LocalDigest != details.RegistryDigest
 		details.UpdateAvailable = &available
 	}
@@ -696,8 +690,8 @@ printf '\nREGISTRY\n'; %s`, shellQuote(containerID), shellQuote(image), registry
 		updateValue = *details.UpdateAvailable
 	}
 	if checkRegistry {
-		_, _ = a.db.ExecContext(r.Context(), `UPDATE containers SET image_version=?,update_available=?,registry_digest=?,image_checked_at=CURRENT_TIMESTAMP,compose_project=?,compose_service=? WHERE agent_id=? AND id=?`,
-			containerVersion(image), updateValue, details.RegistryDigest, details.ComposeProject, details.ComposeService, id, containerID)
+		_, _ = a.db.ExecContext(r.Context(), `UPDATE containers SET image_version=?,available_version=?,version_checked=?,update_available=?,registry_digest=?,image_checked_at=CURRENT_TIMESTAMP,compose_project=?,compose_service=? WHERE agent_id=? AND id=?`,
+			containerVersion(image), details.AvailableVersion, semanticCheckCompleted, updateValue, details.RegistryDigest, details.ComposeProject, details.ComposeService, id, containerID)
 	} else {
 		_, _ = a.db.ExecContext(r.Context(), `UPDATE containers SET image_version=?,compose_project=?,compose_service=? WHERE agent_id=? AND id=?`,
 			containerVersion(image), details.ComposeProject, details.ComposeService, id, containerID)
@@ -747,9 +741,13 @@ func (a *App) containerAction(w http.ResponseWriter, r *http.Request) {
 func (a *App) updateComposeContainer(w http.ResponseWriter, r *http.Request, id int64, containerID string) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
 	defer cancel()
-	var containerName, image, targetDigest string
-	if err := a.db.QueryRowContext(ctx, "SELECT name,image,registry_digest FROM containers WHERE agent_id=? AND id=?", id, containerID).Scan(&containerName, &image, &targetDigest); err != nil {
+	var containerName, image, targetDigest, availableVersion string
+	if err := a.db.QueryRowContext(ctx, "SELECT name,image,registry_digest,available_version FROM containers WHERE agent_id=? AND id=?", id, containerID).Scan(&containerName, &image, &targetDigest, &availableVersion); err != nil {
 		errorJSON(w, 404, "container not found")
+		return
+	}
+	if availableVersion != "" {
+		errorJSON(w, http.StatusConflict, fmt.Sprintf("image is pinned to %s; update the Compose image tag to %s before recreating the service", containerVersion(image), availableVersion))
 		return
 	}
 	inspect := dockerEnvironment + fmt.Sprintf(`docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}{{"\n"}}{{index .Config.Labels "com.docker.compose.service"}}{{"\n"}}{{index .Config.Labels "com.docker.compose.project.working_dir"}}{{"\n"}}{{index .Config.Labels "com.docker.compose.project.config_files"}}' %s`, shellQuote(containerID))
@@ -804,7 +802,7 @@ func (a *App) updateComposeContainer(w http.ResponseWriter, r *http.Request, id 
 		emit("error", fmt.Sprintf("container updated but inventory refresh failed: %v", err))
 		return
 	}
-	_, _ = a.db.ExecContext(ctx, `UPDATE containers SET image_version=?,update_available=0,registry_digest=?,image_checked_at=CURRENT_TIMESTAMP,compose_project=?,compose_service=? WHERE agent_id=? AND name=?`,
+	_, _ = a.db.ExecContext(ctx, `UPDATE containers SET image_version=?,available_version='',version_checked=0,update_available=0,registry_digest=?,image_checked_at=CURRENT_TIMESTAMP,compose_project=?,compose_service=? WHERE agent_id=? AND name=?`,
 		containerVersion(image), targetDigest, project, service, id, containerName)
 	emit("complete", "Container updated successfully.")
 }
@@ -982,6 +980,8 @@ func (a *App) collect(ctx context.Context, id int64) error {
 				ON CONFLICT(agent_id,id) DO UPDATE SET
 				name=excluded.name,image=excluded.image,status=excluded.status,state=excluded.state,ports=excluded.ports,created=excluded.created,uptime=excluded.uptime,updated_at=CURRENT_TIMESTAMP,
 				image_version=CASE WHEN containers.image=excluded.image THEN containers.image_version ELSE excluded.image_version END,
+				available_version=CASE WHEN containers.image=excluded.image THEN containers.available_version ELSE '' END,
+				version_checked=CASE WHEN containers.image=excluded.image THEN containers.version_checked ELSE 0 END,
 				update_available=CASE WHEN containers.image=excluded.image THEN containers.update_available ELSE NULL END,
 				registry_digest=CASE WHEN containers.image=excluded.image THEN containers.registry_digest ELSE '' END,
 				image_checked_at=CASE WHEN containers.image=excluded.image THEN containers.image_checked_at ELSE NULL END`,
@@ -1029,10 +1029,10 @@ func parseSections(out string) map[string]string {
 }
 
 func loadKey(dir string) ([]byte, error) {
-	if encoded := os.Getenv("SECONTROL_MASTER_KEY"); encoded != "" {
+	if encoded := os.Getenv("APP_MASTER_KEY"); encoded != "" {
 		key, err := base64.StdEncoding.DecodeString(encoded)
 		if err != nil || len(key) != 32 {
-			return nil, errors.New("SECONTROL_MASTER_KEY must be base64 for exactly 32 bytes")
+			return nil, errors.New("APP_MASTER_KEY must be base64 for exactly 32 bytes")
 		}
 		return key, nil
 	}

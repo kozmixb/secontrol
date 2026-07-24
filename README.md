@@ -17,6 +17,7 @@ Open `http://localhost:5000`. Data and the generated credential-encryption key a
 - Reusable encrypted SSH key-pair management in Settings
 - GUI-based Ed25519 key generation and public-key import
 - Per-key machine usage counts and deletion protection for assigned keys
+- Editable SSH key names with assignment details
 - Copyable, non-root Linux bootstrap commands for the current user's `authorized_keys`
 - AES-GCM encryption for stored credentials
 - Linux OS, kernel, CPU count, uptime, load, memory, and root-disk collection
@@ -25,6 +26,7 @@ Open `http://localhost:5000`. Data and the generated credential-encryption key a
 - Docker container inventory, on-demand logs, Compose metadata, guarded runtime controls, and one-click Compose image updates
 - Rootless Docker discovery through login-shell environments and per-user daemon sockets
 - Public OCI/Docker registry digest fallback when remote Buildx or manifest plugins are unavailable
+- Registry tag discovery for newer pinned semantic image versions
 - SQLite-backed daily image-version and update-status caching with forced checks on refresh
 - SQLite persistence with WAL mode and seven days of metric samples
 - Automatic polling (60 seconds by default) and manual refresh
@@ -39,12 +41,15 @@ The remote user needs permission to execute `docker ps` and `docker logs`. Rootl
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `SECONTROL_ADDR` | `:5000` | HTTP listen address |
-| `SECONTROL_DATA_DIR` | `./data` | SQLite database and generated master key |
-| `SECONTROL_POLL_INTERVAL` | `60s` | Fleet collection interval |
-| `SECONTROL_MASTER_KEY` | generated | Optional base64-encoded 32-byte encryption key |
+| `APP_PORT` | `5000` | HTTP port used by the app and Docker port mapping |
+| `APP_ADDR` | `:<APP_PORT>` | Optional advanced listen-address override |
+| `APP_DATA_DIR` | `./data` | SQLite database and generated master key |
+| `POLL_INTERVAL` | `60s` | Fleet collection interval |
+| `APP_MASTER_KEY` | generated | Optional base64-encoded 32-byte encryption key |
 
-For production, put the service behind TLS and authentication, set a stable `SECONTROL_MASTER_KEY` in your secret manager, restrict network access, and replace the current trust-on-first-use SSH host-key behavior with stored host fingerprints.
+For Docker Compose, copy `.env.example` to `.env` and change `APP_PORT` or `POLL_INTERVAL`. Duration values such as `30s`, `5m`, or `1h` are accepted for the poll interval.
+
+For production, put the service behind TLS and authentication, set a stable `APP_MASTER_KEY` in your secret manager, restrict network access, and replace the current trust-on-first-use SSH host-key behavior with stored host fingerprints.
 
 ## Local development
 
@@ -64,6 +69,7 @@ go run ./cmd/secontrol
 - `POST /api/agents/test`
 - `GET|POST /api/ssh-keys`
 - `POST /api/ssh-keys/generate`
+- `PATCH /api/ssh-keys/{id}`
 - `DELETE /api/ssh-keys/{id}`
 - `GET|DELETE /api/agents/{id}`
 - `POST /api/agents/{id}/refresh`

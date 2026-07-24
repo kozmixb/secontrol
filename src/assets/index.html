@@ -24,7 +24,7 @@
     </aside>
     <main>
       <header>
-        <div><p class="eyebrow">INFRASTRUCTURE</p><h1 id="page-title">Good morning.</h1><p id="subtitle">Here’s what’s happening across your machines.</p></div>
+        <div><h1 id="page-title">Good morning.</h1><p id="subtitle">Here’s what’s happening across your machines.</p></div>
         <button class="primary" id="add-machine">＋ Add machine</button>
       </header>
       <section id="overview-page">
@@ -77,6 +77,20 @@
       <div id="key-error" class="form-error"></div><div class="dialog-actions"><button type="button" class="secondary" id="cancel-key-bottom">Cancel</button><button class="primary" type="submit">Save encrypted key</button></div>
     </form>
   </dialog>
+  <dialog id="key-detail-dialog" class="settings-dialog">
+    <form id="key-detail-form">
+      <div class="dialog-head"><div><p class="eyebrow">SSH KEY DETAILS</p><h2>Manage SSH key</h2><p>Renaming a key does not change its assignments or key material.</p></div><button type="button" class="icon-btn" id="close-key-detail">×</button></div>
+      <label>Key name<input name="name" id="key-detail-name" required></label>
+      <div class="key-detail-meta">
+        <div><small>STATUS</small><strong id="key-detail-status"></strong></div>
+        <div><small>ADDED</small><strong id="key-detail-created"></strong></div>
+      </div>
+      <div class="key-detail-section"><small>ASSIGNED MACHINES</small><div id="key-detail-machines"></div></div>
+      <div class="key-detail-section"><small>PUBLIC KEY</small><code id="key-detail-public"></code></div>
+      <div id="key-detail-error" class="form-error"></div>
+      <div class="dialog-actions"><button type="button" class="danger-button" id="delete-key-detail">Remove key</button><button type="button" class="secondary" id="cancel-key-detail">Cancel</button><button class="primary" type="submit">Save name</button></div>
+    </form>
+  </dialog>
   <dialog id="container-dialog" class="container-detail-dialog">
     <div id="container-detail-content"></div>
   </dialog>
@@ -91,8 +105,9 @@
       <div><small>AVAILABLE IMAGE</small><strong id="update-to-version"></strong><code id="update-to-digest"></code></div>
     </div>
     <div class="update-impact">
-      <strong>What SeControl will do</strong>
-      <p>Pull the selected Compose service image, recreate that service with its existing configuration, then refresh container inventory.</p>
+      <strong id="update-impact-title">What SeControl will do</strong>
+      <p id="update-impact-text">Pull the selected Compose service image, recreate that service with its existing configuration, then refresh container inventory.</p>
+      <code id="pinned-compose-instruction" hidden></code>
     </div>
     <div class="dialog-actions"><button class="secondary" id="cancel-container-update">Cancel</button><button class="primary" id="confirm-container-update">Update container</button></div>
   </dialog>
