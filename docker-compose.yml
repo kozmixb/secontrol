@@ -1,0 +1,17 @@
+services:
+  secontrol:
+    build: .
+    container_name: secontrol
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - secontrol-data:/data
+    environment:
+      SECONTROL_ADDR: ":5000"
+      SECONTROL_DATA_DIR: "/data"
+      SECONTROL_POLL_INTERVAL: "60s"
+
+volumes:
+  secontrol-data:
+    name: secontrol-data

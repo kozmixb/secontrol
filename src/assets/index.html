@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="SeControl agentless infrastructure control plane">
+  <title>SeControl — Infrastructure, clearly.</title>
+  <link rel="stylesheet" href="/styles.css?v=__ASSET_VERSION__">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <a class="brand" href="#"><span class="brand-mark">S</span><span>SeControl</span></a>
+      <nav>
+        <button class="nav-item active" data-page="overview"><span>⌁</span>Overview</button>
+        <button class="nav-item" data-page="machines"><span>▣</span>Machines</button>
+        <button class="nav-item" data-page="containers"><span>⬡</span>Containers</button>
+      </nav>
+      <div class="side-bottom">
+        <button class="nav-item settings-button" data-page="settings"><span>⚙</span>Settings</button>
+        <div class="side-foot"><span class="live-dot"></span><div><strong>Control plane</strong><small>Healthy · port 5000</small></div></div>
+      </div>
+    </aside>
+    <main>
+      <header>
+        <div><p class="eyebrow">INFRASTRUCTURE</p><h1 id="page-title">Good morning.</h1><p id="subtitle">Here’s what’s happening across your machines.</p></div>
+        <button class="primary" id="add-machine">＋ Add machine</button>
+      </header>
+      <section id="overview-page">
+        <div class="stats">
+          <article><div class="stat-icon teal">▣</div><div><small>MACHINES</small><strong id="stat-machines">0</strong><span id="stat-online">0 online</span></div></article>
+          <article><div class="stat-icon blue">⬡</div><div><small>CONTAINERS</small><strong id="stat-containers">0</strong><span id="stat-running">0 running</span></div></article>
+          <article><div class="stat-icon purple">⌁</div><div><small>AVG. LOAD</small><strong id="stat-load">—</strong><span>Across online hosts</span></div></article>
+          <article><div class="stat-icon amber">◷</div><div><small>LAST CHECK</small><strong id="stat-check">Now</strong><span>Auto-refreshes</span></div></article>
+        </div>
+        <div class="grid">
+          <section class="panel fleet"><div class="panel-head"><div><h2>Fleet status</h2><p>Live health of connected machines</p></div><button class="text-btn" data-page-link="machines">View all →</button></div><div id="fleet-list" class="fleet-list"></div></section>
+          <section class="panel activity"><div class="panel-head"><div><h2>System pulse</h2><p>Current resource posture</p></div></div><div id="pulse" class="pulse-empty">Connect a machine to see its pulse.</div></section>
+        </div>
+      </section>
+      <section id="machines-page" hidden>
+        <div class="panel"><div class="panel-head"><div><h2>Connected machines</h2><p>Agentless monitoring over SSH</p></div><button class="secondary" id="refresh-all">↻ Refresh</button></div><div class="machine-table" id="machine-table"></div></div>
+      </section>
+      <section id="containers-page" hidden>
+        <div class="panel"><div class="panel-head"><div><h2>Fleet containers</h2><p>Every Docker application discovered across your machines</p></div><span class="badge online" id="container-summary">0 running</span></div><div class="container-table" id="container-table"></div></div>
+      </section>
+      <section id="detail-page" hidden></section>
+      <section id="settings-page" hidden>
+        <div class="settings-page-grid">
+          <section class="panel settings-card"><div class="panel-head"><div><h2>Appearance</h2><p>Choose how SeControl looks on this browser.</p></div></div><div class="settings-content"><div class="theme-options"><label><input type="radio" name="theme" value="dark"><span><b>Dark</b><small>Low-light default</small></span></label><label><input type="radio" name="theme" value="light"><span><b>Light</b><small>Bright workspace</small></span></label></div></div></section>
+          <section class="panel settings-card key-settings"><div class="panel-head"><div><h2>SSH keys</h2><p>Reusable private keys are encrypted at rest.</p></div><button class="primary" id="show-key-form">＋ Add SSH key</button></div><div id="key-list" class="key-list"></div></section>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="machine-dialog">
+    <form id="machine-form">
+      <div class="dialog-head"><div><p class="eyebrow">NEW CONNECTION</p><h2>Add a machine</h2><p>Credentials are encrypted before storage.</p></div><button type="button" class="icon-btn" data-close>×</button></div>
+      <div class="form-grid"><label class="full">Display name<input name="name" placeholder="Production API" required></label><label>Hostname or IP<input name="host" placeholder="10.0.1.24" required></label><label>SSH port<input name="port" type="number" value="22" min="1" max="65535" required></label><label class="full">Username<input name="username" placeholder="ubuntu" required></label></div>
+      <fieldset><legend>Authentication</legend><div class="auth-tabs"><label><input type="radio" name="authType" value="key" checked><span>Private key</span></label><label><input type="radio" name="authType" value="password"><span>Password</span></label></div></fieldset>
+      <div class="credential key-field"><label>Saved SSH key<select name="keyId" id="machine-key-select"></select><small class="field-help">Manage encrypted private keys in Settings.</small></label><div id="key-setup" class="key-setup" hidden><div class="setup-head"><strong>Prepare this Linux user</strong><button type="button" class="text-btn" id="copy-setup">Copy commands</button></div><p>Run these commands while signed in as this user. No root or sudo access is required. The machine’s SSH service must already be running.</p><code id="setup-command"></code></div></div>
+      <label class="credential password-field" hidden>Password<input name="password" type="password" autocomplete="new-password"></label>
+      <div id="connection-result" class="connection-result" hidden></div><div id="form-error" class="form-error"></div><div class="dialog-actions"><button type="button" class="secondary" data-close>Cancel</button><button type="button" class="secondary" id="test-connection">Test connection</button><button class="primary" id="save-machine" type="submit" disabled>Add machine</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="key-dialog" class="settings-dialog">
+    <form id="key-form">
+      <div class="dialog-head"><div><p class="eyebrow">CONNECTION CREDENTIAL</p><h2>Add SSH key</h2><p>Generate a new key pair or import an existing private key.</p></div><button type="button" class="icon-btn" id="cancel-key">×</button></div>
+      <div class="key-mode auth-tabs"><label><input type="radio" name="keyMode" value="generate" checked><span>Generate Ed25519 key</span></label><label><input type="radio" name="keyMode" value="import"><span>Import existing key</span></label></div>
+      <div class="form-grid"><label class="full">Key name<input name="name" placeholder="Production servers" required></label><div class="full generate-key-help"><p>SeControl will generate a strong Ed25519 key pair. The private key stays encrypted in the control plane; the public key is shown in machine setup instructions.</p></div><label class="full import-key-field" hidden>Private key<textarea name="privateKey" rows="7" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea></label><label class="full import-key-field" hidden>Public key <small class="field-help">Optional — derived from the private key when omitted.</small><textarea name="publicKey" rows="3" placeholder="ssh-ed25519 AAAA…"></textarea></label></div>
+      <div id="key-error" class="form-error"></div><div class="dialog-actions"><button type="button" class="secondary" id="cancel-key-bottom">Cancel</button><button class="primary" type="submit">Save encrypted key</button></div>
+    </form>
+  </dialog>
+  <dialog id="container-dialog" class="container-detail-dialog">
+    <div id="container-detail-content"></div>
+  </dialog>
+  <div id="toast" role="status"></div>
+  <script src="/app.js?v=__ASSET_VERSION__" defer></script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+# Environment and local data
+.env
+.env.local
+data/
+tmp/
+temp/
+
+# Go build and test output
+/secontrol
+/secontrol.exe
+bin/
+dist/
+coverage/
+*.test
+*.out
+coverage.*
+vendor/
+
+# SQLite runtime files
+*.db
+*.db-shm
+*.db-wal
+
+# Editors and IDEs
+.idea/
+.vscode/
+.fleet/
+.zed/
+*.code-workspace
+*.sublime-project
+*.sublime-workspace
+*~
+*.swp
+*.swo
+
+# Operating-system metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.Spotlight-V100/
+.Trashes/
+ehthumbs.db
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+*.bak
+*.cache

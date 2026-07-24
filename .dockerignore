@@ -1,0 +1,10 @@
+.git
+.env
+data
+/secontrol
+README.md
+.idea
+.vscode
+.fleet
+tmp
+temp
